@@ -1,4 +1,6 @@
 import { Show } from '@/types';
+import { fetchWithTimeout } from '@/lib/api-utils';
+import { cache, cacheTourDatesKey } from '@/lib/cache';
 
 interface TicketmasterEvent {
   id: string;
@@ -43,6 +45,13 @@ interface TicketmasterResponse {
 }
 
 export async function fetchTourDates(artist: string): Promise<Show[]> {
+  const cacheKey = cacheTourDatesKey(artist);
+  const cached = cache.get<Show[]>(cacheKey);
+
+  if (cached) {
+    return cached;
+  }
+
   const apiKey = process.env.TICKETMASTER_API_KEY;
   if (!apiKey) {
     throw new Error('TICKETMASTER_API_KEY is not set');
@@ -54,7 +63,7 @@ export async function fetchTourDates(artist: string): Promise<Show[]> {
   url.searchParams.append('sort', 'date,asc');
   url.searchParams.append('apikey', apiKey);
 
-  const response = await fetch(url.toString());
+  const response = await fetchWithTimeout(url.toString(), {}, 15000);
 
   if (!response.ok) {
     throw new Error(`Ticketmaster API error: ${response.statusText}`);
@@ -64,7 +73,7 @@ export async function fetchTourDates(artist: string): Promise<Show[]> {
 
   const events = data._embedded?.events || [];
 
-  return events
+  const shows = events
     .map((event) => {
       const venue = event._embedded?.venues?.[0];
       if (!venue) return null;
@@ -95,4 +104,8 @@ export async function fetchTourDates(artist: string): Promise<Show[]> {
       };
     })
     .filter((show): show is Show => show !== null);
+
+  cache.set(cacheKey, shows, 1000 * 60 * 60 * 6);
+
+  return shows;
 }

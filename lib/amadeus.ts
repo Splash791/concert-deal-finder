@@ -1,3 +1,6 @@
+import { fetchWithTimeout } from '@/lib/api-utils';
+import { cache, cacheFlightKey } from '@/lib/cache';
+
 let cachedToken: { token: string; expiresAt: number } | null = null;
 
 async function getAmadeusToken(): Promise<string> {
@@ -20,13 +23,17 @@ async function getAmadeusToken(): Promise<string> {
     client_secret: clientSecret,
   });
 
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/x-www-form-urlencoded',
+  const response = await fetchWithTimeout(
+    url,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/x-www-form-urlencoded',
+      },
+      body: body.toString(),
     },
-    body: body.toString(),
-  });
+    10000
+  );
 
   if (!response.ok) {
     throw new Error(`Amadeus token error: ${response.statusText}`);
@@ -60,6 +67,13 @@ export async function fetchFlightEstimate(
   date: string
 ): Promise<number> {
   try {
+    const cacheKey = cacheFlightKey(originCity, destCity, date);
+    const cached = cache.get<number>(cacheKey);
+
+    if (cached !== null) {
+      return cached;
+    }
+
     const token = await getAmadeusToken();
 
     const url = new URL('https://test.api.amadeus.com/v2/shopping/flight-offers');
@@ -70,11 +84,15 @@ export async function fetchFlightEstimate(
     url.searchParams.append('adults', '1');
     url.searchParams.append('max', '1');
 
-    const response = await fetch(url.toString(), {
-      headers: {
-        Authorization: `Bearer ${token}`,
+    const response = await fetchWithTimeout(
+      url.toString(),
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
       },
-    });
+      15000
+    );
 
     if (!response.ok) {
       console.warn(`Amadeus flight fetch error: ${response.statusText}`);
@@ -85,9 +103,12 @@ export async function fetchFlightEstimate(
     const offers = data.data || [];
 
     if (offers.length > 0 && offers[0].price?.total) {
-      return parseFloat(offers[0].price.total);
+      const price = parseFloat(offers[0].price.total);
+      cache.set(cacheKey, price, 1000 * 60 * 60 * 12);
+      return price;
     }
 
+    cache.set(cacheKey, 0, 1000 * 60 * 30);
     return 0;
   } catch (error) {
     console.warn(`Error fetching flight estimate: ${error}`);

@@ -1,10 +1,12 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import { fetchTourDates } from '@/lib/ticketmaster';
 import { fetchDriveInfo } from '@/lib/directions';
 import { fetchFlightEstimate } from '@/lib/amadeus';
 import { fetchHotelEstimate } from '@/lib/hotel';
 import { rankDeals } from '@/lib/scorer';
 import { DealResult } from '@/types';
+import { dealsQuerySchema } from '@/lib/validation';
+import { createErrorResponse, createSuccessResponse, createValidationError, logRequest, logError, fetchWithTimeout } from '@/lib/api-utils';
 
 interface GeocodeResult {
   results?: Array<{
@@ -29,7 +31,7 @@ async function geocodeCity(city: string): Promise<{ lat: number; lon: number } |
   url.searchParams.append('key', apiKey);
 
   try {
-    const response = await fetch(url.toString());
+    const response = await fetchWithTimeout(url.toString(), {}, 10000);
     const data = (await response.json()) as GeocodeResult;
 
     if (data.status === 'OK' && data.results && data.results.length > 0) {
@@ -40,38 +42,37 @@ async function geocodeCity(city: string): Promise<{ lat: number; lon: number } |
     }
     return null;
   } catch (error) {
-    console.error('Geocoding error:', error);
+    logError(error, 'Geocoding error');
     return null;
   }
 }
 
 export async function GET(request: NextRequest) {
   try {
-    const artist = request.nextUrl.searchParams.get('artist');
-    const city = request.nextUrl.searchParams.get('city');
+    const queryParams = {
+      artist: request.nextUrl.searchParams.get('artist'),
+      city: request.nextUrl.searchParams.get('city'),
+    };
 
-    if (!artist || !city) {
-      return NextResponse.json(
-        { error: 'artist and city parameters are required' },
-        { status: 400 }
-      );
+    logRequest('GET', '/api/deals', queryParams);
+
+    const validation = dealsQuerySchema.safeParse(queryParams);
+
+    if (!validation.success) {
+      return createErrorResponse(createValidationError(validation.error), 400);
     }
+
+    const { artist, city } = validation.data;
 
     const originCoords = await geocodeCity(city);
     if (!originCoords) {
-      return NextResponse.json(
-        { error: 'Could not geocode the origin city', data: [] },
-        { status: 200 }
-      );
+      return createSuccessResponse([], 200);
     }
 
     const shows = await fetchTourDates(artist);
 
     if (!shows || shows.length === 0) {
-      return NextResponse.json(
-        { error: 'No tour dates found for the specified artist', data: [] },
-        { status: 200 }
-      );
+      return createSuccessResponse([], 200);
     }
 
     const deals: DealResult[] = [];
@@ -96,7 +97,7 @@ export async function GET(request: NextRequest) {
             miles: driveInfo.miles,
           });
         } catch (error) {
-          console.warn(`Drive info failed for ${show.venue}:`, error);
+          logError(error, `Drive info failed for ${show.venue}`);
         }
 
         try {
@@ -110,11 +111,11 @@ export async function GET(request: NextRequest) {
             });
           }
         } catch (error) {
-          console.warn(`Flight estimate failed for ${show.city}:`, error);
+          logError(error, `Flight estimate failed for ${show.city}`);
         }
 
         if (travelOptions.length === 0) {
-          console.warn(`No travel options found for ${show.venue}, skipping show`);
+          logError(null, `No travel options found for ${show.venue}, skipping show`);
           continue;
         }
 
@@ -133,28 +134,25 @@ export async function GET(request: NextRequest) {
           rank: 0,
         });
       } catch (error) {
-        console.warn(`Failed to fetch data for ${show.venue}: ${error}`);
+        logError(error, `Failed to fetch data for ${show.venue}`);
       }
     }
 
     if (deals.length === 0) {
-      return NextResponse.json(
-        {
-          error: 'Could not process any shows with complete data',
-          data: [],
-        },
-        { status: 200 }
-      );
+      return createSuccessResponse([], 200);
     }
 
     const rankedDeals = rankDeals(deals);
 
-    return NextResponse.json(rankedDeals);
+    return createSuccessResponse(rankedDeals, 200);
   } catch (error) {
-    console.error('Deals API error:', error);
-    return NextResponse.json(
-      { error: 'Failed to fetch deals' },
-      { status: 500 }
+    logError(error, 'Deals API error');
+    return createErrorResponse(
+      {
+        type: 'INTERNAL_ERROR',
+        message: 'Failed to fetch deals',
+      },
+      500
     );
   }
 }

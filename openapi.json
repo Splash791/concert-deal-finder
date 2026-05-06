@@ -1,0 +1,391 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "Concert Deal Finder API",
+    "description": "API for finding the best concert deals combining ticket prices with travel and accommodation costs",
+    "version": "1.0.0",
+    "contact": {
+      "name": "Concert Deal Finder"
+    }
+  },
+  "servers": [
+    {
+      "url": "http://localhost:3000",
+      "description": "Development server"
+    },
+    {
+      "url": "https://api.concertdeals.com",
+      "description": "Production server"
+    }
+  ],
+  "paths": {
+    "/api/tours": {
+      "get": {
+        "summary": "Search for concert tour dates",
+        "description": "Find upcoming concert dates for a given artist",
+        "parameters": [
+          {
+            "name": "artist",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 255
+            },
+            "description": "Artist name to search for"
+          },
+          {
+            "name": "city",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 255
+            },
+            "description": "City for origin location"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of tour dates",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Show"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/travel": {
+      "get": {
+        "summary": "Get travel options between two locations",
+        "description": "Calculate drive and flight costs and times between origin and destination",
+        "parameters": [
+          {
+            "name": "originLat",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "number",
+              "minimum": -90,
+              "maximum": 90
+            }
+          },
+          {
+            "name": "originLon",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "number",
+              "minimum": -180,
+              "maximum": 180
+            }
+          },
+          {
+            "name": "destLat",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "number",
+              "minimum": -90,
+              "maximum": 90
+            }
+          },
+          {
+            "name": "destLon",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "number",
+              "minimum": -180,
+              "maximum": 180
+            }
+          },
+          {
+            "name": "date",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+            }
+          },
+          {
+            "name": "originCity",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "destCity",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Travel options sorted by cost",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/TravelOption"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/hotel": {
+      "get": {
+        "summary": "Get hotel options for a location",
+        "parameters": [
+          {
+            "name": "lat",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "number",
+              "minimum": -90,
+              "maximum": 90
+            }
+          },
+          {
+            "name": "lon",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "number",
+              "minimum": -180,
+              "maximum": 180
+            }
+          },
+          {
+            "name": "date",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+            }
+          },
+          {
+            "name": "city",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Hotel option with pricing",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HotelOption"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/deals": {
+      "get": {
+        "summary": "Get ranked concert deals",
+        "description": "Find the best concert deals ranked by total cost (ticket + travel + hotel)",
+        "parameters": [
+          {
+            "name": "artist",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "city",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Ranked list of concert deals",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/DealResult"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Show": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "artist": {
+            "type": "string"
+          },
+          "city": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string"
+          },
+          "venue": {
+            "type": "string"
+          },
+          "date": {
+            "type": "string",
+            "format": "date"
+          },
+          "lat": {
+            "type": "number"
+          },
+          "lon": {
+            "type": "number"
+          },
+          "minPrice": {
+            "type": "number"
+          },
+          "maxPrice": {
+            "type": "number"
+          },
+          "ticketUrl": {
+            "type": "string",
+            "format": "uri"
+          }
+        }
+      },
+      "TravelOption": {
+        "type": "object",
+        "properties": {
+          "mode": {
+            "type": "string",
+            "enum": ["drive", "fly"]
+          },
+          "cost": {
+            "type": "number"
+          },
+          "durationMinutes": {
+            "type": "integer"
+          },
+          "miles": {
+            "type": "number"
+          }
+        }
+      },
+      "HotelOption": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "pricePerNight": {
+            "type": "string"
+          },
+          "lat": {
+            "type": "number"
+          },
+          "lon": {
+            "type": "number"
+          },
+          "distanceToVenueMiles": {
+            "type": "number"
+          },
+          "bookingUrl": {
+            "type": "string",
+            "format": "uri"
+          }
+        }
+      },
+      "DealResult": {
+        "type": "object",
+        "properties": {
+          "show": {
+            "$ref": "#/components/schemas/Show"
+          },
+          "travelOptions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TravelOption"
+            }
+          },
+          "hotelOption": {
+            "$ref": "#/components/schemas/HotelOption"
+          },
+          "totalCost": {
+            "type": "number"
+          },
+          "rank": {
+            "type": "integer"
+          },
+          "bestDeal": {
+            "type": "boolean"
+          }
+        }
+      },
+      "ValidationError": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["VALIDATION_ERROR"]
+          },
+          "details": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

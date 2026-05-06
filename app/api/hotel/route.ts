@@ -1,28 +1,38 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import { fetchHotelEstimate } from '@/lib/hotel';
+import { hotelQuerySchema } from '@/lib/validation';
+import { createErrorResponse, createSuccessResponse, createValidationError, logRequest, logError } from '@/lib/api-utils';
 
 export async function GET(request: NextRequest) {
   try {
-    const lat = parseFloat(request.nextUrl.searchParams.get('lat') || '0');
-    const lon = parseFloat(request.nextUrl.searchParams.get('lon') || '0');
-    const date = request.nextUrl.searchParams.get('date');
-    const city = request.nextUrl.searchParams.get('city');
+    const queryParams = {
+      lat: request.nextUrl.searchParams.get('lat'),
+      lon: request.nextUrl.searchParams.get('lon'),
+      date: request.nextUrl.searchParams.get('date'),
+      city: request.nextUrl.searchParams.get('city'),
+    };
 
-    if (lat === 0 || lon === 0 || !date) {
-      return NextResponse.json(
-        { error: 'lat, lon, and date parameters are required' },
-        { status: 400 }
-      );
+    logRequest('GET', '/api/hotel', queryParams);
+
+    const validation = hotelQuerySchema.safeParse(queryParams);
+
+    if (!validation.success) {
+      return createErrorResponse(createValidationError(validation.error), 400);
     }
 
-    const hotelOption = await fetchHotelEstimate(lat, lon, date, city || undefined);
+    const { lat, lon, date, city } = validation.data;
 
-    return NextResponse.json(hotelOption);
+    const hotelOption = await fetchHotelEstimate(lat, lon, date, city);
+
+    return createSuccessResponse(hotelOption, 200);
   } catch (error) {
-    console.error('Hotel API error:', error);
-    return NextResponse.json(
-      { error: 'Failed to fetch hotel options' },
-      { status: 500 }
+    logError(error, 'Hotel API error');
+    return createErrorResponse(
+      {
+        type: 'INTERNAL_ERROR',
+        message: 'Failed to fetch hotel options',
+      },
+      500
     );
   }
 }

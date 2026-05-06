@@ -1,30 +1,31 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest } from 'next/server';
 import { fetchDriveInfo } from '@/lib/directions';
 import { fetchFlightEstimate } from '@/lib/amadeus';
 import { TravelOption } from '@/types';
+import { travelQuerySchema } from '@/lib/validation';
+import { createErrorResponse, createSuccessResponse, createValidationError, logRequest, logError } from '@/lib/api-utils';
 
 export async function GET(request: NextRequest) {
   try {
-    const originLat = parseFloat(request.nextUrl.searchParams.get('originLat') || '0');
-    const originLon = parseFloat(request.nextUrl.searchParams.get('originLon') || '0');
-    const destLat = parseFloat(request.nextUrl.searchParams.get('destLat') || '0');
-    const destLon = parseFloat(request.nextUrl.searchParams.get('destLon') || '0');
-    const date = request.nextUrl.searchParams.get('date');
-    const originCity = request.nextUrl.searchParams.get('originCity');
-    const destCity = request.nextUrl.searchParams.get('destCity');
+    const queryParams = {
+      originLat: request.nextUrl.searchParams.get('originLat'),
+      originLon: request.nextUrl.searchParams.get('originLon'),
+      destLat: request.nextUrl.searchParams.get('destLat'),
+      destLon: request.nextUrl.searchParams.get('destLon'),
+      date: request.nextUrl.searchParams.get('date'),
+      originCity: request.nextUrl.searchParams.get('originCity'),
+      destCity: request.nextUrl.searchParams.get('destCity'),
+    };
 
-    if (
-      originLat === 0 ||
-      originLon === 0 ||
-      destLat === 0 ||
-      destLon === 0 ||
-      !date
-    ) {
-      return NextResponse.json(
-        { error: 'originLat, originLon, destLat, destLon, and date parameters are required' },
-        { status: 400 }
-      );
+    logRequest('GET', '/api/travel', queryParams);
+
+    const validation = travelQuerySchema.safeParse(queryParams);
+
+    if (!validation.success) {
+      return createErrorResponse(createValidationError(validation.error), 400);
     }
+
+    const { originLat, originLon, destLat, destLon, date, originCity, destCity } = validation.data;
 
     const travelOptions: TravelOption[] = [];
 
@@ -39,7 +40,7 @@ export async function GET(request: NextRequest) {
         miles: driveInfo.miles,
       });
     } catch (error) {
-      console.warn('Drive info fetch failed:', error);
+      logError(error, 'Drive info fetch failed');
     }
 
     if (originCity && destCity) {
@@ -54,18 +55,21 @@ export async function GET(request: NextRequest) {
           });
         }
       } catch (error) {
-        console.warn('Flight estimate fetch failed:', error);
+        logError(error, 'Flight estimate fetch failed');
       }
     }
 
     const sorted = travelOptions.sort((a, b) => a.cost - b.cost);
 
-    return NextResponse.json(sorted);
+    return createSuccessResponse(sorted, 200);
   } catch (error) {
-    console.error('Travel API error:', error);
-    return NextResponse.json(
-      { error: 'Failed to fetch travel options' },
-      { status: 500 }
+    logError(error, 'Travel API error');
+    return createErrorResponse(
+      {
+        type: 'INTERNAL_ERROR',
+        message: 'Failed to fetch travel options',
+      },
+      500
     );
   }
 }

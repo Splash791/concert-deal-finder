@@ -1,5 +1,7 @@
 import { HotelOption } from '@/types';
 import { haversineDistance } from '@/lib/distance';
+import { fetchWithTimeout } from '@/lib/api-utils';
+import { cache, cacheHotelKey } from '@/lib/cache';
 
 interface CityPopulation {
   [key: string]: number;
@@ -51,11 +53,20 @@ export async function fetchHotelEstimate(
   date: string,
   city?: string
 ): Promise<HotelOption> {
+  const cacheKey = cacheHotelKey(lat, lon, date);
+  const cached = cache.get<HotelOption>(cacheKey);
+
+  if (cached) {
+    return cached;
+  }
+
   const apiKey = process.env.BOOKING_API_KEY;
 
   if (apiKey) {
     try {
-      return await fetchFromBookingApi(lat, lon, date, apiKey);
+      const result = await fetchFromBookingApi(lat, lon, date, apiKey);
+      cache.set(cacheKey, result, 1000 * 60 * 60 * 12);
+      return result;
     } catch (error) {
       console.warn(`Booking.com API failed: ${error}, falling back to estimates`);
     }
@@ -63,7 +74,7 @@ export async function fetchHotelEstimate(
 
   const pricePerNight = getPriceByTier(city || 'unknown');
 
-  return {
+  const result = {
     name: `Hotel in ${city || 'destination'}`,
     pricePerNight: `$${pricePerNight}`,
     lat,
@@ -71,6 +82,10 @@ export async function fetchHotelEstimate(
     distanceToVenueMiles: 0,
     bookingUrl: 'https://www.booking.com',
   };
+
+  cache.set(cacheKey, result, 1000 * 60 * 60 * 12);
+
+  return result;
 }
 
 async function fetchFromBookingApi(
@@ -85,12 +100,16 @@ async function fetchFromBookingApi(
   url.searchParams.append('checkin_date', date);
   url.searchParams.append('checkout_date', getNextDay(date));
 
-  const response = await fetch(url.toString(), {
-    headers: {
-      'Accept': 'application/json',
-      'Authorization': `Bearer ${apiKey}`,
+  const response = await fetchWithTimeout(
+    url.toString(),
+    {
+      headers: {
+        'Accept': 'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+      },
     },
-  });
+    15000
+  );
 
   if (!response.ok) {
     throw new Error(`Booking API error: ${response.statusText}`);

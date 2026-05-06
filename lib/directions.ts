@@ -1,4 +1,6 @@
 import { haversineDistance } from '@/lib/distance';
+import { fetchWithTimeout } from '@/lib/api-utils';
+import { cache, cacheDrivingKey } from '@/lib/cache';
 
 interface GoogleDirectionsResponse {
   routes?: Array<{
@@ -20,6 +22,13 @@ export async function fetchDriveInfo(
   destLat: number,
   destLon: number
 ): Promise<{ miles: number; durationMinutes: number }> {
+  const cacheKey = cacheDrivingKey(originLat, originLon, destLat, destLon);
+  const cached = cache.get<{ miles: number; durationMinutes: number }>(cacheKey);
+
+  if (cached) {
+    return cached;
+  }
+
   const apiKey = process.env.GOOGLE_MAPS_API_KEY;
   if (!apiKey) {
     throw new Error('GOOGLE_MAPS_API_KEY is not set');
@@ -35,7 +44,7 @@ export async function fetchDriveInfo(
   url.searchParams.append('key', apiKey);
 
   try {
-    const response = await fetch(url.toString());
+    const response = await fetchWithTimeout(url.toString(), {}, 15000);
 
     if (!response.ok) {
       throw new Error(`Google Maps API error: ${response.statusText}`);
@@ -60,12 +69,17 @@ export async function fetchDriveInfo(
     const miles = distanceMeters / 1609.34;
     const durationMinutes = Math.ceil(durationSeconds / 60);
 
-    return { miles, durationMinutes };
+    const result = { miles, durationMinutes };
+    cache.set(cacheKey, result, 1000 * 60 * 60 * 24);
+
+    return result;
   } catch (error) {
     console.warn(`Error fetching drive info: ${error}`);
     const miles = haversineDistance(originLat, originLon, destLat, destLon);
     const averageSpeedMph = 65;
     const durationMinutes = Math.ceil((miles / averageSpeedMph) * 60);
-    return { miles, durationMinutes };
+    const result = { miles, durationMinutes };
+    cache.set(cacheKey, result, 1000 * 60 * 60 * 24);
+    return result;
   }
 }

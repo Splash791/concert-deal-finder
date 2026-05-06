@@ -1,0 +1,45 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model SearchHistory {
+  id        String   @id @default(cuid())
+  artist    String
+  city      String
+  results   Int
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([artist])
+  @@index([city])
+  @@index([createdAt])
+}
+
+model SavedDeal {
+  id        String   @id @default(cuid())
+  userId    String
+  showId    String
+  showData  String   @db.Text
+  totalCost Float
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, showId])
+  @@index([userId])
+  @@index([createdAt])
+}
+
+model ApiCache {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  data      String   @db.Text
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([expiresAt])
+}

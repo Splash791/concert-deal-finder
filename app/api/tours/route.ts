@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { fetchTourDates } from '@/lib/ticketmaster';
+import { toursQuerySchema } from '@/lib/validation';
+import { createErrorResponse, createSuccessResponse, createValidationError, logRequest, logError, fetchWithTimeout } from '@/lib/api-utils';
 
 interface GeocodeResult {
   results?: Array<{
@@ -24,7 +26,7 @@ async function geocodeCity(city: string): Promise<{ lat: number; lon: number } |
   url.searchParams.append('key', apiKey);
 
   try {
-    const response = await fetch(url.toString());
+    const response = await fetchWithTimeout(url.toString(), {}, 10000);
     const data = (await response.json()) as GeocodeResult;
 
     if (data.status === 'OK' && data.results && data.results.length > 0) {
@@ -35,41 +37,43 @@ async function geocodeCity(city: string): Promise<{ lat: number; lon: number } |
     }
     return null;
   } catch (error) {
-    console.error('Geocoding error:', error);
+    logError(error, 'Geocoding error');
     return null;
   }
 }
 
 export async function GET(request: NextRequest) {
   try {
-    const artist = request.nextUrl.searchParams.get('artist');
-    const city = request.nextUrl.searchParams.get('city');
+    const queryParams = {
+      artist: request.nextUrl.searchParams.get('artist'),
+      city: request.nextUrl.searchParams.get('city'),
+    };
 
-    if (!artist || !city) {
-      return NextResponse.json(
-        { error: 'artist and city parameters are required' },
-        { status: 400 }
-      );
+    logRequest('GET', '/api/tours', queryParams);
+
+    const validation = toursQuerySchema.safeParse(queryParams);
+
+    if (!validation.success) {
+      return createErrorResponse(createValidationError(validation.error), 400);
     }
+
+    const { artist, city } = validation.data;
 
     const shows = await fetchTourDates(artist);
 
     if (!shows || shows.length === 0) {
-      return NextResponse.json(
-        {
-          error: 'No tour dates found for the specified artist',
-          data: [],
-        },
-        { status: 200 }
-      );
+      return createSuccessResponse([], 200);
     }
 
-    return NextResponse.json(shows);
+    return createSuccessResponse(shows, 200);
   } catch (error) {
-    console.error('Tours API error:', error);
-    return NextResponse.json(
-      { error: 'Failed to fetch tour dates' },
-      { status: 500 }
+    logError(error, 'Tours API error');
+    return createErrorResponse(
+      {
+        type: 'INTERNAL_ERROR',
+        message: 'Failed to fetch tour dates',
+      },
+      500
     );
   }
 }
