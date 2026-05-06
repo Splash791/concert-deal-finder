@@ -24,7 +24,7 @@ model SavedDeal {
   id        String   @id @default(cuid())
   userId    String
   showId    String
-  showData  String   @db.Text
+  showData  String
   totalCost Float
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -37,7 +37,7 @@ model SavedDeal {
 model ApiCache {
   id        String   @id @default(cuid())
   key       String   @unique
-  data      String   @db.Text
+  data      String
   expiresAt DateTime
   createdAt DateTime @default(now())
 
