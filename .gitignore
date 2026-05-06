@@ -18,3 +18,5 @@ build/
 .claude/
 *.claude
 .claudeignore
+prisma/*.db
+prisma/*.db-journal
